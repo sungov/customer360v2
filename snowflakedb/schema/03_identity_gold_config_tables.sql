@@ -6,9 +6,20 @@ CREATE OR REPLACE TABLE IDENTITY.SOURCE_CUSTOMER (
   raw_record_id STRING, active_flag BOOLEAN DEFAULT TRUE, created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(), updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 CREATE OR REPLACE TABLE IDENTITY.SOURCE_CUSTOMER_KEYS (
-  source_record_uid STRING, source_system STRING, source_customer_id STRING,
-  normalized_email STRING, normalized_phone STRING, normalized_first_name STRING, normalized_last_name STRING, normalized_full_name STRING,
-  dob DATE, postal_code STRING, loyalty_id STRING, blocking_email_domain STRING, blocking_phone_last4 STRING, blocking_name_dob STRING,
+  source_record_uid STRING,
+  source_system STRING,
+  source_customer_id STRING,
+  normalized_email STRING,
+  normalized_phone STRING,
+  normalized_first_name STRING,
+  normalized_last_name STRING,
+  normalized_full_name STRING,
+  dob DATE,
+  postal_code STRING,
+  loyalty_id STRING,
+  blocking_email_domain STRING,
+  blocking_phone_last4 STRING,
+  blocking_name_dob STRING,
   created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 CREATE OR REPLACE TABLE IDENTITY.SOURCE_DEDUPE_GROUP (
