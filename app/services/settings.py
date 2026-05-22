@@ -6,11 +6,13 @@ class Settings(BaseSettings):
     snowflake_account: str = ''
     snowflake_user: str = ''
     snowflake_password: str = ''
-    snowflake_role: str = 'C360_APP_ROLE'
-    snowflake_warehouse: str = 'WH_C360_XS'
+    snowflake_role: str = 'ACCOUNTADMIN'
+    snowflake_warehouse: str = 'COMPUTE_WH'
     snowflake_database: str = 'CUSTOMER360_V2'
     snowflake_schema: str = 'PUBLIC'
-
+    snowflake_authenticator: str = "snowflake"
+    snowflake_token: str | None = None
+    
     redis_host: str = 'localhost'
     redis_port: int = 6379
     redis_password: str | None = None

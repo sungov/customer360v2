@@ -12,6 +12,7 @@ def get_connection():
         warehouse=settings.snowflake_warehouse,
         database=settings.snowflake_database,
         schema=settings.snowflake_schema,
+        
     )
 
 def execute(sql: str, params=None):
