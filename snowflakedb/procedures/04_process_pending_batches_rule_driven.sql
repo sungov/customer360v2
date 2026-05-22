@@ -12,7 +12,7 @@ LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
 PACKAGES = ('snowflake-snowpark-python')
 HANDLER = 'main'
-EXECUTE AS OWNER
+EXECUTE AS CALLER
 AS
 $$
 from __future__ import annotations
@@ -136,8 +136,8 @@ def load_raw_customers_to_identity(session: Session, batch_id: str, source_syste
         MERGE INTO IDENTITY.SOURCE_CUSTOMER tgt
         USING (
             SELECT
-                r.source_system     AS source_system,
-                r.source_customer_id AS source_customer_id,
+                '{source_system}'       AS source_system,
+                r.source_customer_id    AS source_customer_id,
                 r.first_name,
                 r.last_name,
                 r.email,
@@ -149,8 +149,12 @@ def load_raw_customers_to_identity(session: Session, batch_id: str, source_syste
                 r.postal_code,
                 r.country,
                 r.loyalty_id,
-                r.batch_id          AS batch_id,
-                r.raw_record_id     AS raw_record_id
+                r.batch_id              AS batch_id,
+                r.raw_record_id         AS raw_record_id,
+                UUID_STRING()           AS source_record_uid,
+                CURRENT_TIMESTAMP()     AS created_at,
+                CURRENT_TIMESTAMP()     AS updated_at,
+                TRUE                    AS active_flag
             FROM {raw_table} r
             WHERE r.batch_id = '{q(batch_id)}'
               AND COALESCE(r.process_status, 'NEW') IN ('NEW', 'LOADED')
@@ -170,7 +174,7 @@ def load_raw_customers_to_identity(session: Session, batch_id: str, source_syste
             tgt.country            = src.country,
             tgt.loyalty_id         = src.loyalty_id,
             tgt.batch_id           = src.batch_id,
-            tgt.updated_at         = CURRENT_TIMESTAMP()
+            tgt.updated_at         = src.updated_at
         WHEN NOT MATCHED THEN INSERT (
             source_record_uid,
             source_system,
@@ -193,7 +197,7 @@ def load_raw_customers_to_identity(session: Session, batch_id: str, source_syste
             active_flag
         )
         VALUES (
-            UUID_STRING(),
+            src.source_record_uid,
             src.source_system,
             src.source_customer_id,
             src.batch_id,
@@ -209,9 +213,9 @@ def load_raw_customers_to_identity(session: Session, batch_id: str, source_syste
             src.country,
             src.loyalty_id,
             src.raw_record_id,
-            CURRENT_TIMESTAMP(),
-            CURRENT_TIMESTAMP(),
-            TRUE
+            src.created_at,
+            src.updated_at,
+            src.active_flag
         )
     """)
 
@@ -255,7 +259,7 @@ def build_customer_keys(session: Session, batch_id: str):
                         TRIM(COALESCE(c.first_name,'') || COALESCE(c.last_name,'')),
                         '[^A-Za-z]', ''))
                     || ':' || COALESCE(TO_VARCHAR(c.dob), '')         AS blocking_name_dob,
-                CURRENT_TIMESTAMP()                                   AS updated_at
+                CURRENT_TIMESTAMP()                                   AS created_at
             FROM IDENTITY.SOURCE_CUSTOMER c
             WHERE c.batch_id   = '{q(batch_id)}'
               AND c.active_flag = TRUE
@@ -307,7 +311,7 @@ def build_customer_keys(session: Session, batch_id: str):
             src.blocking_email_domain,
             src.blocking_phone_last4,
             src.blocking_name_dob,
-            CURRENT_TIMESTAMP()
+            src.created_at
         )
     """)
 
@@ -556,8 +560,8 @@ def run_rule_driven_cross_source_matching(session: Session, batch_id: str, rules
         MERGE INTO GOLD.GOLDEN_CUSTOMER tgt
         USING (
             SELECT
-                r.golden_customer_id   AS golden_customer_id,
-                r.rule_version_id      AS rule_version_id,
+                r.golden_customer_id        AS golden_customer_id,
+                r.rule_version_id           AS rule_version_id,
                 c.first_name,
                 c.last_name,
                 c.email,
@@ -568,7 +572,10 @@ def run_rule_driven_cross_source_matching(session: Session, batch_id: str, rules
                 c.state,
                 c.postal_code,
                 c.country,
-                c.loyalty_id
+                c.loyalty_id,
+                CURRENT_TIMESTAMP()         AS created_at,
+                CURRENT_TIMESTAMP()         AS updated_at,
+                'ACTIVE'                    AS status
             FROM TMP_RESOLVED r
             JOIN IDENTITY.SOURCE_CUSTOMER c
               ON  c.source_system      = r.source_system
@@ -608,9 +615,9 @@ def run_rule_driven_cross_source_matching(session: Session, batch_id: str, rules
             src.postal_code,
             src.country,
             src.loyalty_id,
-            CURRENT_TIMESTAMP(),
-            CURRENT_TIMESTAMP(),
-            'ACTIVE'
+            src.created_at,
+            src.updated_at,
+            src.status
         )
     """)
 
@@ -619,12 +626,15 @@ def run_rule_driven_cross_source_matching(session: Session, batch_id: str, rules
         MERGE INTO IDENTITY.IDENTITY_CROSSWALK tgt
         USING (
             SELECT
-                r.golden_customer_id   AS golden_customer_id,
-                r.source_system        AS source_system,
-                r.source_customer_id   AS source_customer_id,
-                r.resolution_type      AS link_type,
-                r.confidence           AS confidence,
-                r.rule_version_id      AS rule_version_id
+                r.golden_customer_id        AS golden_customer_id,
+                r.source_system             AS source_system,
+                r.source_customer_id        AS source_customer_id,
+                r.resolution_type           AS link_type,
+                r.confidence                AS confidence,
+                r.rule_version_id           AS rule_version_id,
+                TRUE                        AS active_flag,
+                CURRENT_TIMESTAMP()         AS linked_at,
+                CURRENT_TIMESTAMP()         AS updated_at
             FROM TMP_RESOLVED r
             WHERE r.resolution_type IN ('NEW_GOLDEN', 'MATCHED_EXISTING')
         ) src
@@ -635,8 +645,8 @@ def run_rule_driven_cross_source_matching(session: Session, batch_id: str, rules
             tgt.link_type          = src.link_type,
             tgt.confidence         = src.confidence,
             tgt.rule_version_id    = src.rule_version_id,
-            tgt.updated_at         = CURRENT_TIMESTAMP(),
-            tgt.active_flag        = TRUE
+            tgt.updated_at         = src.updated_at,
+            tgt.active_flag        = src.active_flag
         WHEN NOT MATCHED THEN INSERT (
             golden_customer_id,
             source_system,
@@ -655,9 +665,9 @@ def run_rule_driven_cross_source_matching(session: Session, batch_id: str, rules
             src.link_type,
             src.confidence,
             src.rule_version_id,
-            TRUE,
-            CURRENT_TIMESTAMP(),
-            CURRENT_TIMESTAMP()
+            src.active_flag,
+            src.linked_at,
+            src.updated_at
         )
     """)
 
